@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { openai, AI_MODEL } from '@/lib/openai/client';
+import { getOpenAI, AI_MODEL } from '@/lib/openai/client';
 import { buildDiagnosticPrompt } from '@/lib/openai/prompts';
 
 export async function POST(req: NextRequest) {
@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
 
     const prompt = buildDiagnosticPrompt({ subject: subjectName, studentAge, schoolLevel, currentForm });
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: AI_MODEL,
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { openai, AI_MODEL } from '@/lib/openai/client';
+import { getOpenAI, AI_MODEL } from '@/lib/openai/client';
 import { buildTeacherSystemPrompt } from '@/lib/openai/prompts';
 import type { TeachingMode, LearningStyle, LearningSpeed } from '@/types';
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       studentName,
     });
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: AI_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
