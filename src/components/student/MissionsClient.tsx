@@ -35,8 +35,8 @@ export default function MissionsClient({ student, todayMission, recentMissions }
     if (!mission) return;
     const supabase = createClient();
     const updatedTasks = mission.tasks.map((t: MissionTask, i: number) =>
-      i === taskIndex ? { ...t, status: 'completed' } : t
-    );
+      i === taskIndex ? { ...t, status: 'completed' as const } : t
+    ) as MissionTask[];
     const completedCount = updatedTasks.filter((t: MissionTask) => t.status === 'completed').length;
     const completedMinutes = updatedTasks.filter((t: MissionTask) => t.status === 'completed').reduce((s: number, t: MissionTask) => s + t.duration_minutes, 0);
     const completionPct = (completedCount / updatedTasks.length) * 100;
