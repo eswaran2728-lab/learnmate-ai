@@ -457,6 +457,7 @@ CREATE POLICY "Users can update own data" ON public.users FOR UPDATE USING (auth
 -- Students can access their own records
 CREATE POLICY "Students view own record" ON public.students FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Students update own record" ON public.students FOR UPDATE USING (user_id = auth.uid());
+CREATE POLICY "Students create own record" ON public.students FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
 
 -- Subjects are public read
 CREATE POLICY "Subjects are publicly readable" ON public.subjects FOR SELECT USING (true);
@@ -505,10 +506,25 @@ CREATE POLICY "Students access own chat" ON public.chat_history FOR ALL USING (
 CREATE POLICY "Students access own exam readiness" ON public.exam_readiness FOR ALL USING (
   student_id IN (SELECT id FROM public.students WHERE user_id = auth.uid())
 );
+CREATE POLICY "Students access own diagnostic results" ON public.diagnostic_results FOR ALL
+  USING (student_id IN (SELECT id FROM public.students WHERE user_id = auth.uid()))
+  WITH CHECK (student_id IN (SELECT id FROM public.students WHERE user_id = auth.uid()));
+
+-- Admin and logging tables
+CREATE POLICY "Admins manage settings" ON public.admin_settings FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'));
+CREATE POLICY "Admins view whatsapp logs" ON public.whatsapp_logs FOR SELECT
+  USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'));
+CREATE POLICY "Authenticated insert whatsapp logs" ON public.whatsapp_logs FOR INSERT TO authenticated WITH CHECK (true);
 
 -- Parents access their children's data
 CREATE POLICY "Parents view own record" ON public.parents FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Parents update own record" ON public.parents FOR UPDATE USING (user_id = auth.uid());
+CREATE POLICY "Parents create own record" ON public.parents FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Parents view own reports" ON public.parent_reports FOR SELECT USING (
+  parent_id IN (SELECT id FROM public.parents WHERE user_id = auth.uid())
+);
 CREATE POLICY "Parents view children" ON public.students FOR SELECT USING (
   parent_id IN (SELECT id FROM public.parents WHERE user_id = auth.uid())
 );
@@ -519,7 +535,9 @@ CREATE POLICY "Parents view children" ON public.students FOR SELECT USING (
 
 -- Auto-update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SET search_path = public
+AS $$
 BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
 $$ language 'plpgsql';
 
@@ -529,20 +547,54 @@ CREATE TRIGGER update_parents_updated_at BEFORE UPDATE ON public.parents FOR EAC
 CREATE TRIGGER update_missions_updated_at BEFORE UPDATE ON public.daily_missions FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_paths_updated_at BEFORE UPDATE ON public.learning_paths FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
--- Function to create user profile after signup
+-- Create the user row plus the student/parent profile after signup.
+-- Runs server-side so registration works even when email confirmation
+-- is required and the client has no session yet.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
+RETURNS trigger
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role text := COALESCE(new.raw_user_meta_data->>'role', 'student');
+  v_name text := COALESCE(new.raw_user_meta_data->>'full_name', 'User');
+  v_dob date;
+  v_age int;
+  v_age_group uuid;
 BEGIN
   INSERT INTO public.users (id, email, full_name, role)
-  VALUES (
-    new.id,
-    new.email,
-    COALESCE(new.raw_user_meta_data->>'full_name', 'User'),
-    COALESCE(new.raw_user_meta_data->>'role', 'student')
-  );
+  VALUES (new.id, new.email, v_name, v_role)
+  ON CONFLICT (id) DO NOTHING;
+
+  IF v_role = 'student' AND new.raw_user_meta_data->>'date_of_birth' IS NOT NULL THEN
+    v_dob := (new.raw_user_meta_data->>'date_of_birth')::date;
+    v_age := date_part('year', age(v_dob))::int;
+    SELECT id INTO v_age_group FROM public.age_groups
+      WHERE v_age BETWEEN min_age AND max_age
+      ORDER BY min_age LIMIT 1;
+
+    INSERT INTO public.students
+      (user_id, full_name, date_of_birth, age, school_level, current_form, age_group_id, preferred_language)
+    VALUES (
+      new.id, v_name, v_dob, v_age,
+      COALESCE(new.raw_user_meta_data->>'school_level', 'primary'),
+      new.raw_user_meta_data->>'current_form',
+      v_age_group,
+      COALESCE(new.raw_user_meta_data->>'preferred_language', 'en')
+    )
+    ON CONFLICT (user_id) DO NOTHING;
+  ELSIF v_role = 'parent' THEN
+    INSERT INTO public.parents (user_id, full_name, whatsapp_number)
+    VALUES (new.id, v_name, new.raw_user_meta_data->>'whatsapp_number')
+    ON CONFLICT (user_id) DO NOTHING;
+  END IF;
+
   RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql;
+
+-- Clients must not call the signup trigger function directly
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
