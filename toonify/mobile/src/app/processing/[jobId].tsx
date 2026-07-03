@@ -63,7 +63,7 @@ export default function ProcessingScreen() {
           </View>
           <Text style={s.percent}>{Math.round(progress * 100)}%</Text>
           <Text style={s.hint}>
-            Each frame is re-drawn by the AI — this takes a minute or two.
+            Your whole clip is being redrawn in the style you picked — usually under a minute.
           </Text>
         </>
       )}

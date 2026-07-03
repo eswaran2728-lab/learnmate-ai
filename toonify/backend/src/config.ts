@@ -17,9 +17,12 @@ export const config = {
   // Where finished videos live when using the local storage driver.
   mediaDir: process.env.MEDIA_DIR ?? path.resolve("data/media"),
 
-  // "mock" runs a local FFmpeg cartoon-ish filter per frame (free, for pipeline
-  // validation). "replicate" calls the hosted model. Never default to the paid one.
-  styleProvider: (process.env.STYLE_PROVIDER ?? "mock") as "mock" | "replicate",
+  // "local" is the free FFmpeg-based cartoon engine (the default product
+  // experience); "replicate" calls a hosted AI model and costs money per
+  // frame. Never default to the paid one. "mock" is a legacy alias for local.
+  styleProvider: ((process.env.STYLE_PROVIDER ?? "local") === "mock"
+    ? "local"
+    : (process.env.STYLE_PROVIDER ?? "local")) as "local" | "replicate",
   replicateApiToken: process.env.REPLICATE_API_TOKEN ?? "",
   // Full model ref, e.g. "owner/model" or "owner/model:versionhash".
   replicateModel: process.env.REPLICATE_MODEL ?? "",

@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -115,7 +115,48 @@ export async function assembleVideo(
   await execFileAsync(FFMPEG, args, { maxBuffer: 32 * 1024 * 1024 });
 }
 
-/** Run an arbitrary ffmpeg filter on a single image (used by the mock provider). */
+/** Run an arbitrary ffmpeg filter on a single image (used by the local provider). */
 export async function filterImage(input: string, output: string, filter: string): Promise<void> {
   await execFileAsync(FFMPEG, ["-y", "-i", input, "-vf", filter, "-frames:v", "1", output]);
+}
+
+/**
+ * Run a filter graph over a whole video in one FFmpeg pass, keeping the
+ * source frame rate and audio. Progress is parsed from ffmpeg's -progress
+ * stream (out_time vs. known duration).
+ */
+export function filterVideo(
+  input: string,
+  output: string,
+  filter: string,
+  durationSeconds: number,
+  onProgress?: (fraction: number) => void
+): Promise<void> {
+  const args = [
+    "-y",
+    "-loglevel", "error",
+    "-i", input,
+    "-vf", filter,
+    "-c:v", "libx264",
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-movflags", "+faststart",
+    "-progress", "pipe:1",
+    output,
+  ];
+  return new Promise((resolve, reject) => {
+    const proc = spawn(FFMPEG, args);
+    let stderr = "";
+    proc.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    proc.stdout.on("data", (chunk: Buffer) => {
+      const match = /out_time_us=(\d+)/.exec(chunk.toString());
+      if (match && durationSeconds > 0 && onProgress) {
+        onProgress(Math.min(1, Number(match[1]) / 1e6 / durationSeconds));
+      }
+    });
+    proc.on("error", reject);
+    proc.on("close", (code) =>
+      code === 0 ? resolve() : reject(new Error(`ffmpeg exited with ${code}: ${stderr.slice(-2000)}`))
+    );
+  });
 }

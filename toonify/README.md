@@ -39,8 +39,11 @@ Prove the whole pipeline end-to-end (generates a test video, uploads, polls, ver
 npm run smoke
 ```
 
-By default the backend uses the **mock style provider** — a local FFmpeg cartoon-ish filter per
-frame, so the full pipeline runs with zero API cost. To use real AI style transfer, set in `.env`:
+By default the backend uses the **free local style engine**: cartoon looks built from FFmpeg
+filter graphs (edge-preserving smoothing, cel-shading color bands, real ink outlines — tuned per
+preset in `src/styles/presets.ts`). It costs nothing to run, processes the whole clip in one
+pass at the source frame rate, and is flicker-free by construction. Optionally, for AI style
+transfer (paid, per frame), set in `.env`:
 
 ```
 STYLE_PROVIDER=replicate
@@ -68,13 +71,16 @@ auto-provisioning on signup), the jobs table, a monthly-usage view, and a privat
 
 ## Architecture notes
 
-**Pipeline** (`backend/src/pipeline/process.ts`):
-video → frames at reduced fps → stylize each frame → reassemble (original audio muxed back) →
-storage → app polls `GET /api/jobs/:id`.
+**Pipeline** (`backend/src/pipeline/process.ts`) — two modes, picked by provider capability:
+- *Fast path* (local engine): whole video stylized in one FFmpeg pass — source fps and audio
+  preserved, live progress, no flicker possible.
+- *Frame path* (AI providers): frames at reduced fps → stylize each frame → reassemble
+  (original audio muxed back) → storage. The app polls `GET /api/jobs/:id` either way.
 
-**Provider abstraction** (`backend/src/providers/styleTransfer.ts`): the AI backend is one
-interface (`stylizeFrame`). Swapping Replicate for another provider — or a video-native model —
-touches only `providers/`, selected by the `STYLE_PROVIDER` env var.
+**Provider abstraction** (`backend/src/providers/styleTransfer.ts`): the style engine is one
+interface (`stylizeFrame` + optional `stylizeVideo` fast path). Swapping Replicate for another
+provider — or a video-native model — touches only `providers/`, selected by the
+`STYLE_PROVIDER` env var (`local` | `replicate`).
 
 **Cost guardrails** (all env-tunable, enforced server-side):
 - `MAX_VIDEO_SECONDS=30` — duration cap, validated with ffprobe on upload
@@ -85,13 +91,13 @@ touches only `providers/`, selected by the `STYLE_PROVIDER` env var.
 
 ## ⚠️ Known risk: temporal consistency (flagged per brief)
 
-Frame-by-frame img2img stylization processes each frame independently, which commonly causes
-**flicker** between frames. The mock provider (deterministic filters) doesn't show this, but a
-real diffusion-based img2img model will. **Before investing in Phases 4+**, run a real clip
-through a Replicate img2img model and judge the flicker. If quality is unacceptable, evaluate
-video-native style-transfer models on Replicate instead — thanks to the provider abstraction
-that swap is contained to `backend/src/providers/`. (A video-native provider would bypass frame
-extraction entirely; the pipeline already keeps that step isolated.)
+This only applies to the **paid AI path**: frame-by-frame img2img stylization processes each
+frame independently, which commonly causes **flicker** between frames. The default local engine
+is immune (deterministic per-pixel filters, whole-video pass). If/when enabling Replicate,
+run one real clip first and judge the flicker before investing further. If quality is
+unacceptable, evaluate video-native style-transfer models instead — the provider abstraction
+already supports whole-video providers via `stylizeVideo`, so that swap is contained to
+`backend/src/providers/`.
 
 ## API surface
 

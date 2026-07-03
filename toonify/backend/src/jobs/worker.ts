@@ -53,7 +53,8 @@ async function runJob(jobId: string): Promise<void> {
     );
 
     updateJob(jobId, { status: "done", progress: 1, resultUrl });
-    console.log(`[job ${jobId}] done (${frameCount} frames) -> ${resultUrl}`);
+    const mode = frameCount > 0 ? `${frameCount} frames` : "whole-video pass";
+    console.log(`[job ${jobId}] done (${mode}) -> ${resultUrl}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     updateJob(jobId, { status: "failed", error: message });

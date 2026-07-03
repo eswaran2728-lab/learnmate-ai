@@ -8,7 +8,7 @@ export default function HomeScreen() {
       <Text style={styles.logo}>🎬✨</Text>
       <Text style={styles.title}>Toonify</Text>
       <Text style={styles.subtitle}>
-        Turn any short video into a cartoon. Pick a clip, pick a style, and let the AI do the rest.
+        Turn any short video into a cartoon. Pick a clip, pick a style, and watch it transform.
       </Text>
 
       <Link href="/upload" asChild>

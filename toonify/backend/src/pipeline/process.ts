@@ -8,19 +8,24 @@ import type { StylePreset } from "../styles/presets.js";
 
 export interface ProcessResult {
   resultUrl: string;
+  /** Frames sent through per-frame stylization; 0 on the whole-video fast path. */
   frameCount: number;
 }
 
 /**
- * The core Phase 2 pipeline:
- *   video -> frames (reduced fps, capped width) -> stylize each frame ->
- *   reassemble -> upload to storage.
+ * The core Phase 2 pipeline. Two modes, chosen by the provider's abilities:
  *
- * KNOWN QUALITY RISK (flagged per project brief): frames are stylized
- * independently, so img2img models can produce flicker between frames
- * (temporal inconsistency). If output quality is poor with a real model,
- * evaluate video-native style-transfer models on Replicate before building
- * Phases 4+. The provider abstraction means that swap only touches
+ * Fast path (local FFmpeg engine): the provider stylizes the whole video in
+ * one pass — source frame rate and audio preserved, no flicker possible.
+ *
+ * Frame path (AI providers): video -> frames (reduced fps, capped width) ->
+ * stylize each frame -> reassemble -> upload.
+ *
+ * KNOWN QUALITY RISK on the frame path (flagged per project brief): frames
+ * are stylized independently, so img2img models can produce flicker between
+ * frames (temporal inconsistency). If output quality is poor with a real
+ * model, evaluate video-native style-transfer models on Replicate before
+ * building Phases 4+. The provider abstraction means that swap only touches
  * providers/, not this pipeline or the app.
  */
 export async function processVideo(
@@ -38,6 +43,13 @@ export async function processVideo(
 
   try {
     const info = await probeVideo(inputVideo);
+
+    if (provider.stylizeVideo) {
+      const outputFile = path.join(jobDir, "result.mp4");
+      await provider.stylizeVideo(inputVideo, outputFile, preset, info.durationSeconds, onProgress);
+      const resultUrl = await storage.saveResult(outputFile, `results/${jobId}.mp4`);
+      return { resultUrl, frameCount: 0 };
+    }
 
     const frames = await extractFrames(inputVideo, rawDir, config.processFps, config.maxFrameWidth);
 
