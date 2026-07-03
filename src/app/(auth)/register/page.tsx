@@ -19,6 +19,7 @@ export default function RegisterPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
   function update(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -35,11 +36,22 @@ export default function RegisterPage() {
 
     const supabase = createClient();
 
+    // The database trigger (handle_new_user) creates the users row plus the
+    // student/parent profile from this metadata, so signup works even when
+    // email confirmation is required and no session exists yet.
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
       options: {
-        data: { full_name: form.fullName, role },
+        data: {
+          full_name: form.fullName,
+          role,
+          date_of_birth: form.dateOfBirth || null,
+          school_level: form.schoolLevel || null,
+          current_form: form.currentForm || null,
+          preferred_language: form.preferredLanguage,
+          whatsapp_number: form.whatsappNumber || null,
+        },
       },
     });
 
@@ -49,32 +61,15 @@ export default function RegisterPage() {
       return;
     }
 
-    if (authData.user) {
-      if (role === 'student') {
-        const age = calculateAge(form.dateOfBirth);
-        const ageGroupId = await getAgeGroupId(supabase, age);
-        await supabase.from('students').insert({
-          user_id: authData.user.id,
-          full_name: form.fullName,
-          date_of_birth: form.dateOfBirth,
-          age,
-          school_level: form.schoolLevel,
-          current_form: form.currentForm,
-          age_group_id: ageGroupId,
-          preferred_language: form.preferredLanguage,
-        });
-        router.push('/student/diagnostic');
-      } else if (role === 'parent') {
-        await supabase.from('parents').insert({
-          user_id: authData.user.id,
-          full_name: form.fullName,
-          whatsapp_number: form.whatsappNumber,
-        });
-        router.push('/parent/dashboard');
-      } else {
-        router.push('/admin/dashboard');
-      }
+    if (!authData.session) {
+      setNeedsConfirmation(true);
+      setLoading(false);
+      return;
     }
+
+    if (role === 'student') router.push('/student/diagnostic');
+    else if (role === 'parent') router.push('/parent/dashboard');
+    else router.push('/admin/dashboard');
   }
 
   return (
@@ -97,7 +92,16 @@ export default function RegisterPage() {
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-5">{error}</div>
         )}
 
-        {step === 1 && (
+        {needsConfirmation && (
+          <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg px-4 py-4 text-sm mb-5">
+            <p className="font-semibold mb-1">✅ Account created!</p>
+            <p>We&apos;ve sent a confirmation link to <strong>{form.email}</strong>. Click it, then{' '}
+              <Link href="/login" className="text-primary-600 font-medium hover:underline">log in here</Link>.
+            </p>
+          </div>
+        )}
+
+        {!needsConfirmation && step === 1 && (
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">I am a...</label>
@@ -138,7 +142,7 @@ export default function RegisterPage() {
           </div>
         )}
 
-        {step === 2 && (
+        {!needsConfirmation && step === 2 && (
           <form onSubmit={handleRegister} className="space-y-4">
             {role === 'student' && (
               <>
@@ -197,16 +201,3 @@ export default function RegisterPage() {
   );
 }
 
-function calculateAge(dob: string): number {
-  const today = new Date();
-  const birth = new Date(dob);
-  let age = today.getFullYear() - birth.getFullYear();
-  if (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) age--;
-  return age;
-}
-
-async function getAgeGroupId(supabase: ReturnType<typeof import('@/lib/supabase/client').createClient>, age: number): Promise<string | null> {
-  const level = age <= 6 ? 'preschool' : age <= 12 ? 'primary' : age <= 17 ? 'secondary' : 'pre_university';
-  const { data } = await supabase.from('age_groups').select('id').eq('level', level).single();
-  return data?.id ?? null;
-}
