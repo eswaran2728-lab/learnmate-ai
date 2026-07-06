@@ -27,7 +27,8 @@ from build123d import (
 )
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.join(HERE, "output")
 BODY_OUT = os.path.join(OUT, "bodies")
 os.makedirs(BODY_OUT, exist_ok=True)
 
@@ -71,6 +72,67 @@ def capsule(p1, p2, r):
     mid = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
     ang = math.degrees(math.atan2(dy, dx))
     return Pos(*mid) * Rot(0, 0, ang) * SlotCenterToCenter(ln, 2 * r)
+
+
+def taper_sector(cx, cy, r_in, r_out, a0, a1, tip_at_a1, tip_frac=0.35,
+                 tip_w=2.4, n=72):
+    """Annular sector whose outer radius eases down near one end, giving the
+    crescent a tapered (but not knife-sharp) tip."""
+    pts = []
+    for i in range(n + 1):
+        t = i / n
+        a = math.radians(a0 + (a1 - a0) * t)
+        u = (1 - t) if tip_at_a1 else t          # 0 at the tip end
+        k = min(1.0, u / tip_frac) ** 0.7
+        rr = r_in + tip_w + (r_out - r_in - tip_w) * k
+        pts.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
+    for i in range(n + 1):
+        t = 1 - i / n
+        a = math.radians(a0 + (a1 - a0) * t)
+        pts.append((cx + r_in * math.cos(a), cy + r_in * math.sin(a)))
+    return Polygon(*pts, align=None)
+
+
+def trace_silhouette(img_path, target_h, thicken=0.6):
+    """Vector-trace a black-on-white silhouette photo into a 2D sketch.
+
+    thicken: morphological dilation in mm applied so the thinnest features
+    (the staffs in the fighter's hands) stay FDM-printable (>= ~2.6 mm).
+    Returns a sketch centred on its bounding box, target_h mm tall.
+    """
+    import cv2
+    import numpy as np
+    im = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+    mask = (cv2.GaussianBlur(im, (5, 5), 0) < 128).astype(np.uint8)
+    ys, xs = np.where(mask > 0)
+    s = target_h / float(ys.max() - ys.min())
+    r = max(1, int(round(thicken / s)))
+    kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+    mask = cv2.dilate(mask, kern)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kern)
+    ys, xs = np.where(mask > 0)
+    s = target_h / float(ys.max() - ys.min())
+    cx, cy = (xs.min() + xs.max()) / 2.0, (ys.min() + ys.max()) / 2.0
+    contours, hier = cv2.findContours(mask, cv2.RETR_CCOMP,
+                                      cv2.CHAIN_APPROX_SIMPLE)
+    sk = None
+    holes = []
+    for c, h in zip(contours, hier[0]):
+        area = cv2.contourArea(c) * s * s
+        pts = cv2.approxPolyDP(c, 1.6, True).reshape(-1, 2)
+        if len(pts) < 3:
+            continue
+        poly = Polygon(*[((x - cx) * s, (cy - y) * s) for x, y in pts],
+                       align=None)
+        if h[3] == -1:                    # outer contour
+            if area < 60:                 # drop specks
+                continue
+            sk = poly if sk is None else sk + poly
+        elif area > 8:                    # interior hole
+            holes.append(poly)
+    for hp in holes:
+        sk -= hp
+    return sk
 
 
 def fit_text(txt, height, max_w):
@@ -140,15 +202,20 @@ b_gold += ex(Pos(0, 43) * frame(130, 17, 2.5), award_face,
 
 # --- text -------------------------------------------------------------------
 main_lines = [
-    ("PERSATUAN SILAMBAM MALAYSIA", 5.0, 93.0, 105),
-    ("DAERAH  SEPANG", 4.0, 87.0, 105),
-    ("SEPANG DISTRICT OPEN", 5.2, 81.0, 105),
-    ("SILAMBAM CHAMPIONSHIP 2026", 5.2, 74.5, 105),
-    ("BBST SPORTS ARENA", 4.0, 60.0, 105),
+    ("PERSATUAN SILAMBAM MALAYSIA", 5.0, 93.0, 105, False),
+    ("DAERAH  SEPANG", 4.0, 87.0, 105, True),
+    ("SEPANG DISTRICT OPEN", 5.2, 81.0, 105, False),
+    ("SILAMBAM CHAMPIONSHIP 2026", 5.2, 74.5, 105, False),
+    ("BBST SPORTS ARENA", 4.0, 60.0, 105, True),
 ]
-for (txt, h, ycen, mw) in main_lines:
-    b_gold += ex(Pos(0, ycen) * fit_text(txt, h, mw), main_face,
-                 main_face + TEXT_RAISE)
+for (txt, h, ycen, mw, dashes) in main_lines:
+    t = fit_text(txt, h, mw)
+    line = Pos(0, ycen) * t
+    if dashes:  # flanking separator dashes as in the reference design
+        w = t.bounding_box().size.X
+        for sx in (-1, 1):
+            line += Pos(sx * (w / 2 + 9), ycen) * Rectangle(11, 1.4)
+    b_gold += ex(line, main_face, main_face + TEXT_RAISE)
 
 b_gold += ex(Pos(0, 43) * fit_text("APPRECIATION AWARD", 7.0, 120),
              award_face, award_face + TEXT_RAISE)
@@ -157,7 +224,7 @@ b_gold += ex(Pos(0, 43) * fit_text("APPRECIATION AWARD", 7.0, 120),
 ribbon = Polygon((-50, 66.75), (-44, 63.5), (44, 63.5), (50, 66.75), (44, 70),
                  (-44, 70), align=None)
 b_red = ex(ribbon, main_face, main_face + 1.2)
-b_gold += ex(Pos(0, 66.75) * fit_text("★  19 JULY 2026  ★", 4.0, 84),
+b_gold += ex(Pos(0, 66.75) * fit_text("★ ★  19 JULY 2026  ★ ★", 4.0, 84),
              main_face + 1.2, main_face + 1.2 + TEXT_RAISE)
 
 # ===========================================================================
@@ -166,8 +233,11 @@ b_gold += ex(Pos(0, 66.75) * fit_text("★  19 JULY 2026  ★", 4.0, 84),
 print("Building Part A (upper) ...")
 CX, CY = DISC_C
 
-# --- BLACK: background disc + neck + connector bosses + tenons ---------------
-disc = ex(Pos(CX, CY) * Circle(DISC_R), 0, 6)
+# --- BLACK: background disc + notched peak + neck + bosses + tenons ----------
+# the reference plate is a circle with a twin-pointed notch at the top
+peak = Polygon((-22, 206), (26, 202), (14, 238), (4, 221), (-4, 246),
+               align=None)
+disc = ex(Pos(CX, CY) * Circle(DISC_R) + peak, 0, 6)
 neck = ex(Polygon((-38, BASE_TOP), (38, BASE_TOP), (33, 132), (-33, 132),
                   align=None), 0, 6)
 a_black = disc + neck
@@ -183,10 +253,10 @@ for sx in (-1, 1):
 # --- GOLD: rim ring ----------------------------------------------------------
 gold = ex(Pos(CX, CY) * (Circle(RIM_RO) - Circle(RIM_RI)), 0, 9)
 
-# --- GOLD: curved crescent frames -------------------------------------------
+# --- GOLD: curved crescent frames (tapered tips like the reference) ----------
 # left crescent sweeps over the top-left, right crescent up the right side
-gold += ex(ring_sector(CX, CY, 61, 74, 95, 185), 0, 10)
-gold += ex(ring_sector(CX, CY, 61, 74, -60, 75), 0, 10)
+gold += ex(taper_sector(CX, CY, 61, 74, 95, 185, tip_at_a1=False), 0, 10)
+gold += ex(taper_sector(CX, CY, 61, 74, -60, 75, tip_at_a1=True), 0, 10)
 
 # --- GOLD: laurel sprigs ------------------------------------------------------
 def laurel(a0, a1, n_leaves, flip):
@@ -206,34 +276,15 @@ gold += ex(laurel(290, 348, 6, flip=True), 0, 8)      # right sprig
 above_split = ex(Pos(0, 350) * Rectangle(400, 500), -30, 60)
 gold &= above_split
 
-# --- GOLD: martial artist silhouette (built from thick capsules) -------------
-FX, FY = 1.0, 124.0        # figure feet baseline on the disc
-J = lambda x, y: (FX + x, FY + y)
-
-fig = Pos(*J(-10, 90)) * Circle(8.5)                                # head
-fig += capsule(J(-8, 78), J(2, 58), 9.5)                            # chest
-fig += capsule(J(2, 58), J(5, 44), 8.0)                             # waist/hip
-fig += capsule(J(-4, 73), J(-20, 61), 5.5)                          # R upper arm
-fig += capsule(J(-20, 61), J(-27, 73), 4.8)                         # R forearm
-fig += Pos(*J(-28, 75)) * Circle(5.5)                               # R fist
-fig += capsule(J(-35, 61), J(-24, 90), 2.9)                         # hand stick
-fig += capsule(J(1, 72), J(14, 62), 5.5)                            # L upper arm
-fig += capsule(J(14, 62), J(23, 70), 5.0)                           # L forearm
-fig += Pos(*J(24, 71)) * Circle(5.5)                                # L fist
-fig += capsule(J(3, 46), J(-18, 27), 7.0)                           # R thigh
-fig += capsule(J(-18, 27), J(-26, 8), 6.0)                          # R shin
-fig += capsule(J(-29, 4), J(-15, 4), 4.5)                           # R foot
-fig += capsule(J(6, 46), J(25, 26), 7.0)                            # L thigh
-fig += capsule(J(25, 26), J(30, 8), 6.0)                            # L shin
-fig += capsule(J(27, 4), J(41, 4), 4.5)                             # L foot
-fig += capsule(J(-6, 52), J(8, 50), 3.0)                            # belt
-
+# --- GOLD: martial artist silhouette (vector-traced from the photo) ----------
+fig = Pos(2, 166) * trace_silhouette(os.path.join(HERE, "silhouette.jpg"),
+                                     target_h=104, thicken=0.6)
 fig = fig & (Pos(CX, CY) * Circle(DISC_R - 3))       # keep on the disc
 fig_solid = ex(fig, 6, 12)                            # 6 mm proud of disc
 gold += fig_solid
 
 # --- BROWN: crossed silambam staffs   /  BLUE + RED grips --------------------
-CROSS = (0.0, 150.0)
+CROSS = (0.0, 148.0)
 STICK_R = 4.5                 # 9 mm diameter (spec: >= 8 mm)
 below_z6 = ex(Rectangle(500, 600), -30, 6)            # halfspace z < 6
 disc_prism = ex(Pos(CX, CY) * Circle(57), -5, 40)     # keep on the disc
@@ -253,20 +304,33 @@ def grip(angle_deg, t):
     g = (g & disc_prism) - below_z6
     return g
 
+def staff_cap(angle_deg, t):
+    """Small gold end-cap ring on a staff tip (as in the reference)."""
+    a = math.radians(angle_deg)
+    cx, cy = CROSS[0] + t * math.cos(a), CROSS[1] + t * math.sin(a)
+    c = (Pos(cx, cy, 9.0) * Rot(0, 0, angle_deg) * Rot(0, 90, 0)
+         * Cylinder(5.4, 5))
+    return (c & disc_prism) - below_z6
+
 stick_a = staff(40)      # lower-left -> upper-right
 stick_b = staff(140)     # lower-right -> upper-left
-grip_blue = grip(40, -47)     # LEFT grip  (blue)
-grip_red = grip(140, -47)     # RIGHT grip (red)
+grip_blue = grip(40, -44)     # LEFT grip  (blue)
+grip_red = grip(140, -44)     # RIGHT grip (red)
+caps = (staff_cap(40, 60) + staff_cap(140, 60)) - fig_prism - a_black
 
-# layering: staffs pass BEHIND the figure and behind the grips
-brown = (stick_a + stick_b) - fig_prism - grip_blue - grip_red - a_black
+# layering: staffs pass BEHIND the figure, grips and gold end caps
+brown = ((stick_a + stick_b) - fig_prism - grip_blue - grip_red - caps
+         - a_black)
 grip_blue = grip_blue - fig_prism - a_black
 grip_red = grip_red - fig_prism - a_black
+gold += caps
 
 # --- RED: angular rear accent panel ------------------------------------------
+# flame-shaped shard: twin spikes above the plate notch, a sliver hugging
+# the right crescent, and a tongue pointing down at ~5 o'clock
 red_poly = Polygon(
-    (22, 210), (44, 196), (49, 162), (36, 132), (55, 116), (68, 158),
-    (63, 200), (43, 245), (24, 250), (6, 198),
+    (20, 206), (42, 192), (46, 160), (36, 134), (48, 102), (62, 120),
+    (78, 150), (74, 184), (62, 208), (40, 250), (30, 224), (16, 242),
     align=None,
 )
 a_red = (ex(red_poly, 0, 5) - a_black - gold) & above_split
