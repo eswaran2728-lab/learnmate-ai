@@ -1,0 +1,47 @@
+{
+ "PartA_Black_Background": [
+  35,
+  35,
+  38
+ ],
+ "PartA_Gold_Decor": [
+  212,
+  175,
+  55
+ ],
+ "PartA_Red_AccentPanel": [
+  185,
+  28,
+  40
+ ],
+ "PartA_Brown_Staffs": [
+  140,
+  92,
+  45
+ ],
+ "PartA_Blue_LeftGrip": [
+  35,
+  70,
+  170
+ ],
+ "PartA_Red_RightGrip": [
+  185,
+  28,
+  40
+ ],
+ "PartB_Black_Base": [
+  35,
+  35,
+  38
+ ],
+ "PartB_Gold_TextBorders": [
+  212,
+  175,
+  55
+ ],
+ "PartB_Red_Ribbon": [
+  185,
+  28,
+  40
+ ]
+}
