@@ -1,0 +1,331 @@
+{
+  "name": "Eshan Creations - WhatsApp AI Auto-Reply",
+  "meta": {
+    "description": "Phase 2-3 of PLAN.md. WhatsApp Trigger -> #manual/#auto takeover routing -> Gemini AI Agent -> WhatsApp reply -> ChatLog. Import into n8n, then fill in the WhatsApp and Google Sheets credentials plus the spreadsheet ID."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["messages"]
+      },
+      "id": "n1-whatsapp-trigger",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [-1200, 0],
+      "webhookId": "eshan-creations-whatsapp",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "whatsapp-cloud-api",
+          "name": "Eshan Creations WhatsApp Cloud API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $input.first().json.messages?.[0] ?? {};\nconst contact = $input.first().json.contacts?.[0] ?? {};\nreturn [{\n  json: {\n    from: msg.from,\n    text: (msg.text?.body || '').trim(),\n    textLower: (msg.text?.body || '').trim().toLowerCase(),\n    name: contact.profile?.name || 'Unknown',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "n2-parse-incoming",
+      "name": "Parse Incoming",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-980, 0]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{$env.GOOGLE_SHEETS_SPREADSHEET_ID}}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Paused"
+        },
+        "lookupColumn": "Number",
+        "lookupValue": "={{$json.from}}"
+      },
+      "id": "n3-check-paused",
+      "name": "Check Paused List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [-760, 0],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets",
+          "name": "Eshan Creations Google Sheets"
+        }
+      },
+      "notes": "Paused tab columns: Number | PausedAt. Node returns row_number in output when a match is found (n8n Google Sheets node convention) - used later to remove the row on #auto."
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $('Parse Incoming').first().json;\nconst pausedRows = $input.all();\nreturn [{\n  json: {\n    ...parsed,\n    isPaused: pausedRows.length > 0,\n    pausedRowNumber: pausedRows[0]?.json?.row_number ?? null\n  }\n}];"
+      },
+      "id": "n4-compute-flags",
+      "name": "Compute Flags",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-540, 0]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "manual_keyword",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.textLower}}",
+                    "rightValue": "#manual",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "auto_keyword",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.textLower}}",
+                    "rightValue": "#auto",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "fallbackOutput": "normal"
+      },
+      "id": "n5-route-keyword",
+      "name": "Route Keyword",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [-320, 0]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{$env.GOOGLE_SHEETS_SPREADSHEET_ID}}"
+        },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Paused" },
+        "columns": {
+          "value": {
+            "Number": "={{$json.from}}",
+            "PausedAt": "={{$json.timestamp}}"
+          }
+        }
+      },
+      "id": "n6-add-paused",
+      "name": "Add To Paused",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [-80, -220],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "google-sheets", "name": "Eshan Creations Google Sheets" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{$env.WHATSAPP_PHONE_NUMBER_ID}}",
+        "recipientPhoneNumber": "={{$json.from}}",
+        "textBody": "Ok noted! I'll pause the auto-reply bot for you 🙏 Boss will reply personally. Send #auto anytime to turn the bot back on."
+      },
+      "id": "n7-confirm-manual",
+      "name": "Confirm Manual",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [140, -220],
+      "credentials": {
+        "whatsAppApi": { "id": "whatsapp-cloud-api", "name": "Eshan Creations WhatsApp Cloud API" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "deleteRow",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{$env.GOOGLE_SHEETS_SPREADSHEET_ID}}"
+        },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Paused" },
+        "startIndex": "={{$json.pausedRowNumber}}",
+        "numberOfRows": 1
+      },
+      "id": "n8-remove-paused",
+      "name": "Remove From Paused",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [-80, 0],
+      "notes": "Only fires meaningfully if pausedRowNumber is set (i.e. the number was actually paused). If it's null, this is a no-op that n8n will error on - add an IF guard on isPaused before this node once you wire it up in n8n.",
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "google-sheets", "name": "Eshan Creations Google Sheets" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{$env.WHATSAPP_PHONE_NUMBER_ID}}",
+        "recipientPhoneNumber": "={{$json.from}}",
+        "textBody": "Bot is back on! 🤖 Ask me anything about our statues — pricing, sizes, delivery."
+      },
+      "id": "n9-confirm-auto",
+      "name": "Confirm Auto",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [140, 0],
+      "credentials": {
+        "whatsAppApi": { "id": "whatsapp-cloud-api", "name": "Eshan Creations WhatsApp Cloud API" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.isPaused}}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      },
+      "id": "n10-is-paused",
+      "name": "Is Paused?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-80, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, reply: '(skipped - manual mode active for this number)' } }];"
+      },
+      "id": "n11-skipped-reply",
+      "name": "Mark Skipped",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [140, 340]
+    },
+    {
+      "parameters": {
+        "text": "={{$json.text}}",
+        "options": {
+          "systemMessage": "See automation/prompts/gemini-system-prompt.md - paste the full contents here."
+        }
+      },
+      "id": "n12-ai-agent",
+      "name": "AI Agent (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [140, 140]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash"
+      },
+      "id": "n13-gemini-model",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [80, 300],
+      "credentials": {
+        "googlePalmApi": { "id": "gemini-api", "name": "Eshan Creations Gemini" }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdExpression": "={{$('Parse Incoming').first().json.from}}",
+        "contextWindowLength": 12
+      },
+      "id": "n14-memory",
+      "name": "Conversation Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{$env.WHATSAPP_PHONE_NUMBER_ID}}",
+        "recipientPhoneNumber": "={{$('Parse Incoming').first().json.from}}",
+        "textBody": "={{$json.output}}"
+      },
+      "id": "n15-send-ai-reply",
+      "name": "Send AI Reply",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [360, 140],
+      "credentials": {
+        "whatsAppApi": { "id": "whatsapp-cloud-api", "name": "Eshan Creations WhatsApp Cloud API" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{$env.GOOGLE_SHEETS_SPREADSHEET_ID}}"
+        },
+        "sheetName": { "__rl": true, "mode": "name", "value": "ChatLog" },
+        "columns": {
+          "value": {
+            "Date": "={{$('Parse Incoming').first().json.timestamp}}",
+            "Number": "={{$('Parse Incoming').first().json.from}}",
+            "Message": "={{$('Parse Incoming').first().json.text}}",
+            "Reply": "={{$json.output || $json.reply || $json.textBody || '(system message)'}}"
+          }
+        }
+      },
+      "id": "n16-append-chatlog",
+      "name": "Append ChatLog",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [600, 0],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "google-sheets", "name": "Eshan Creations Google Sheets" }
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": { "main": [[{ "node": "Parse Incoming", "type": "main", "index": 0 }]] },
+    "Parse Incoming": { "main": [[{ "node": "Check Paused List", "type": "main", "index": 0 }]] },
+    "Check Paused List": { "main": [[{ "node": "Compute Flags", "type": "main", "index": 0 }]] },
+    "Compute Flags": { "main": [[{ "node": "Route Keyword", "type": "main", "index": 0 }]] },
+    "Route Keyword": {
+      "main": [
+        [{ "node": "Add To Paused", "type": "main", "index": 0 }],
+        [{ "node": "Remove From Paused", "type": "main", "index": 0 }],
+        [{ "node": "Is Paused?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Add To Paused": { "main": [[{ "node": "Confirm Manual", "type": "main", "index": 0 }]] },
+    "Confirm Manual": { "main": [[{ "node": "Append ChatLog", "type": "main", "index": 0 }]] },
+    "Remove From Paused": { "main": [[{ "node": "Confirm Auto", "type": "main", "index": 0 }]] },
+    "Confirm Auto": { "main": [[{ "node": "Append ChatLog", "type": "main", "index": 0 }]] },
+    "Is Paused?": {
+      "main": [
+        [{ "node": "Mark Skipped", "type": "main", "index": 0 }],
+        [{ "node": "AI Agent (Gemini)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mark Skipped": { "main": [[{ "node": "Append ChatLog", "type": "main", "index": 0 }]] },
+    "Gemini Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent (Gemini)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Conversation Memory": {
+      "ai_memory": [[{ "node": "AI Agent (Gemini)", "type": "ai_memory", "index": 0 }]]
+    },
+    "AI Agent (Gemini)": { "main": [[{ "node": "Send AI Reply", "type": "main", "index": 0 }]] },
+    "Send AI Reply": { "main": [[{ "node": "Append ChatLog", "type": "main", "index": 0 }]] }
+  }
+}

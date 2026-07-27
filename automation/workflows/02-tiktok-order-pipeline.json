@@ -1,0 +1,225 @@
+{
+  "name": "Eshan Creations - TikTok Order Pipeline",
+  "meta": {
+    "description": "Phase 4-6 of PLAN.md. TikTok ORDER_STATUS_CHANGE webhook -> HMAC verify -> Get Order Detail -> status filter -> dedupe -> append to Orders sheet -> Telegram alert. Import into n8n, then fill in the TikTok, Google Sheets and Telegram credentials."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "eshan-creations-tiktok-orders",
+        "responseMode": "responseNode"
+      },
+      "id": "n1-webhook",
+      "name": "TikTok Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1400, 0],
+      "webhookId": "eshan-creations-tiktok-orders"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst body = JSON.stringify($input.first().json.body ?? {});\nconst headerSig = $input.first().json.headers['x-tts-signature'] || '';\nconst secret = $env.TIKTOK_APP_SECRET;\nconst computed = crypto.createHmac('sha256', secret).update(body).digest('hex');\nif (computed !== headerSig) {\n  throw new Error('TikTok webhook signature mismatch - possible spoofed request');\n}\nreturn [{ json: $input.first().json.body }];"
+      },
+      "id": "n2-verify-signature",
+      "name": "Verify Signature (HMAC)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1180, 0],
+      "notes": "Rejects the request unless x-tts-signature matches HMAC-SHA256(body, TIKTOK_APP_SECRET). See TikTok Shop Partner Center docs for the exact signing spec (some events sign body+path+timestamp instead of raw body - confirm against the docs for your subscribed event type)."
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "EVENT_RECEIVED",
+        "options": {}
+      },
+      "id": "n3-ack-webhook",
+      "name": "Ack Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [-1180, 220],
+      "notes": "TikTok expects a fast 200 response. Respond immediately, then keep processing in the rest of this workflow (n8n runs both branches from Verify Signature)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const orderId = $json.data?.order_id || $json.order_id;\nif (!orderId) throw new Error('No order_id in TikTok webhook payload');\nreturn [{ json: { orderId } }];"
+      },
+      "id": "n4-extract-order-id",
+      "name": "Extract Order ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-960, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst appKey = $env.TIKTOK_APP_KEY;\nconst appSecret = $env.TIKTOK_APP_SECRET;\nconst accessToken = $env.TIKTOK_ACCESS_TOKEN;\nconst shopCipher = $env.TIKTOK_SHOP_CIPHER;\nconst timestamp = Math.floor(Date.now() / 1000).toString();\nconst path = '/order/202309/orders';\n\nconst params = {\n  app_key: appKey,\n  shop_cipher: shopCipher,\n  timestamp\n};\n\n// TikTok signing: sort params by key, concat key+value, wrap with path + app_secret, HMAC-SHA256\nconst sortedKeys = Object.keys(params).sort();\nlet base = path;\nfor (const key of sortedKeys) {\n  base += key + params[key];\n}\nbase = appSecret + base + appSecret;\nconst sign = crypto.createHmac('sha256', appSecret).update(base).digest('hex');\n\nreturn [{\n  json: {\n    orderId: $json.orderId,\n    path,\n    queryParams: { ...params, sign, access_token: accessToken },\n    body: { order_id_list: [$json.orderId] }\n  }\n}];"
+      },
+      "id": "n5-sign-request",
+      "name": "Build Signed Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-740, 0],
+      "notes": "Placeholder signing logic - confirm the exact path, query params and canonical string format against the current TikTok Shop Open API docs for the Get Order Detail endpoint before going live."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://open-api.tiktokglobalshop.com{{$json.path}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "app_key", "value": "={{$json.queryParams.app_key}}" },
+            { "name": "shop_cipher", "value": "={{$json.queryParams.shop_cipher}}" },
+            { "name": "timestamp", "value": "={{$json.queryParams.timestamp}}" },
+            { "name": "sign", "value": "={{$json.queryParams.sign}}" },
+            { "name": "access_token", "value": "={{$json.queryParams.access_token}}" },
+            { "name": "ids", "value": "={{$json.orderId}}" }
+          ]
+        }
+      },
+      "id": "n6-get-order-detail",
+      "name": "Get Order Detail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-520, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = ($json.data?.order_list || $json.data?.orders || [])[0] || {};\nconst recipient = order.recipient_address || {};\nconst items = order.line_items || order.item_list || [];\nconst productNames = items.map(i => i.product_name || i.sku_name).filter(Boolean).join(', ');\nconst qty = items.reduce((sum, i) => sum + (i.quantity || 1), 0);\nreturn [{\n  json: {\n    date: new Date().toISOString(),\n    orderId: order.order_id || order.id,\n    product: productNames || '(unknown)',\n    qty,\n    amountRM: order.payment?.total_amount || order.payment_info?.total_amount || '',\n    buyer: recipient.name || order.buyer_email || 'Unknown',\n    phone: recipient.phone_number || '',\n    address: [recipient.full_address, recipient.district, recipient.state].filter(Boolean).join(', '),\n    status: order.status || order.order_status\n  }\n}];"
+      },
+      "id": "n7-extract-fields",
+      "name": "Extract Order Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.status}}",
+              "rightValue": "^(CONFIRMED|AWAITING_SHIPMENT)$",
+              "operator": { "type": "string", "operation": "regex" }
+            }
+          ]
+        }
+      },
+      "id": "n8-status-filter",
+      "name": "Status Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-80, 0],
+      "notes": "Only CONFIRMED / AWAITING_SHIPMENT orders continue to the sheet + alert. Adjust the regex if TikTok's status enum differs from your shop's config."
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{$env.GOOGLE_SHEETS_SPREADSHEET_ID}}"
+        },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Orders 2026" },
+        "lookupColumn": "Order ID",
+        "lookupValue": "={{$json.orderId}}"
+      },
+      "id": "n9-check-duplicate",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [140, 0],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "google-sheets", "name": "Eshan Creations Google Sheets" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$input.all().length}}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "n10-not-duplicate",
+      "name": "Not Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [360, 0]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{$env.GOOGLE_SHEETS_SPREADSHEET_ID}}"
+        },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Orders 2026" },
+        "columns": {
+          "value": {
+            "Date": "={{$('Extract Order Fields').first().json.date}}",
+            "Order ID": "={{$('Extract Order Fields').first().json.orderId}}",
+            "Product": "={{$('Extract Order Fields').first().json.product}}",
+            "Qty": "={{$('Extract Order Fields').first().json.qty}}",
+            "Amount (RM)": "={{$('Extract Order Fields').first().json.amountRM}}",
+            "Buyer": "={{$('Extract Order Fields').first().json.buyer}}",
+            "Phone": "={{$('Extract Order Fields').first().json.phone}}",
+            "Address": "={{$('Extract Order Fields').first().json.address}}",
+            "Status": "={{$('Extract Order Fields').first().json.status}}",
+            "Tracking No": "",
+            "Printed?": "No",
+            "Shipped?": "No"
+          }
+        }
+      },
+      "id": "n11-append-order",
+      "name": "Append Order",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [580, 0],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "google-sheets", "name": "Eshan Creations Google Sheets" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=🛒 NEW ORDER! {{$('Extract Order Fields').first().json.product}} x{{$('Extract Order Fields').first().json.qty}} — RM{{$('Extract Order Fields').first().json.amountRM}} — {{$('Extract Order Fields').first().json.buyer}} — Order #{{$('Extract Order Fields').first().json.orderId}}",
+        "additionalFields": {}
+      },
+      "id": "n12-telegram-alert",
+      "name": "Telegram New Order Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [800, 0],
+      "credentials": {
+        "telegramApi": { "id": "telegram-bot", "name": "Eshan Creations Telegram Bot" }
+      }
+    }
+  ],
+  "connections": {
+    "TikTok Webhook": {
+      "main": [
+        [
+          { "node": "Verify Signature (HMAC)", "type": "main", "index": 0 },
+          { "node": "Ack Webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Verify Signature (HMAC)": { "main": [[{ "node": "Extract Order ID", "type": "main", "index": 0 }]] },
+    "Extract Order ID": { "main": [[{ "node": "Build Signed Request", "type": "main", "index": 0 }]] },
+    "Build Signed Request": { "main": [[{ "node": "Get Order Detail", "type": "main", "index": 0 }]] },
+    "Get Order Detail": { "main": [[{ "node": "Extract Order Fields", "type": "main", "index": 0 }]] },
+    "Extract Order Fields": { "main": [[{ "node": "Status Filter", "type": "main", "index": 0 }]] },
+    "Status Filter": { "main": [[{ "node": "Check Duplicate", "type": "main", "index": 0 }]] },
+    "Check Duplicate": { "main": [[{ "node": "Not Duplicate?", "type": "main", "index": 0 }]] },
+    "Not Duplicate?": { "main": [[{ "node": "Append Order", "type": "main", "index": 0 }]] },
+    "Append Order": { "main": [[{ "node": "Telegram New Order Alert", "type": "main", "index": 0 }]] }
+  }
+}
