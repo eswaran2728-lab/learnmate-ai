@@ -49,15 +49,18 @@ no need to ask size/usage first for these, only for fully custom requests)
 7. Hanuman Idol — 5 inch — PETG — RM49
 8. Baby Kaali — 3.5 inch — PETG — RM42
 9. Sagili Karupar Statue — 9 inch — PETG — RM195
-10. Chinna Karuppu Dashboard Edition — 3.5 inch — PETG — RM38
-11. Bala Murugan Golden Edition — 3.5 inch — PLA Silk — RM44.90
+10. Chinna Karuppu Dashboard Edition — 3.5 inch — RM38 — available in PETG or PLA Silk (ask
+    customer which material they prefer)
+11. Bala Murugan Golden Edition — RM44.90 — available in two options: 3.5 inch (PLA Silk) or
+    5 inch (PETG) (ask customer which size they prefer)
 12. Jalan Baru Veera Muniswarar — 5 inch — PETG — RM44.90
 13. Sangili Karuppar Idol — 3.5 inch — PETG — RM49.90
 14. Premium Jadamuni Statue — 3.5 inch — PETG — RM45
 15. Dhyanam Muniswarar — 3.5 inch — PETG — RM44.90
 16. Lord Shiva Meditation Statue — 3.5 inch White (PETG) RM30, or 3.5 inch Gold (PLA Silk) RM39
 17. Thalapathy CM Tribute Sculpture — 3.5 inch — PETG — RM33.99
-18. Sri Ganesha Aura Statue — 4 inch — PETG — RM26
+18. Sri Ganesha Aura Statue — PETG — RM26 — available in 3.5 inch or 4 inch (ask customer
+    which size they prefer)
 19. Divine Mahadev Shiva Statue — 4 inch — Black PETG — RM25
 20. Divine Murugan Home Idol — 4 inch — PETG — RM28.90 - RM38.90
 21. Sri Karumariamman Divine Idol — 4 inch — PETG — RM25
@@ -183,21 +186,6 @@ RULES
 - Always move the conversation toward: identify need -> recommend size/material -> quote ->
   collect order details -> confirm payment method.
 ```
-
-## Known conflicts in the source knowledge base (resolve or confirm with Eswaran)
-
-The uploaded doc has two product lists that disagree on a few items. The prompt above uses the
-"COMPLETE PRODUCT DATABASE" (Section 23) version since the doc calls it the corrected one, but
-flag these for a final check:
-
-- **Chinna Karuppu Dashboard Edition**: material listed as PLA Silk in one section, PETG in the
-  other (used **PETG** above).
-- **Bala Murugan Golden Edition**: size/material listed as 5 inch PETG in one section, 3.5 inch
-  PLA Silk in the other (used **3.5 inch PLA Silk** above).
-- **Lord Shiva Meditation Statue**: one section gives a single RM35-RM49.90 range, the other
-  splits it into a White PETG variant (RM30) and a Gold PLA Silk variant (RM39). Used the
-  **split version** above since it's more specific.
-- **Sri Ganesha Aura Statue**: size listed as both 3.5 inch and 4 inch (used **4 inch** above).
 
 ## Notes
 
