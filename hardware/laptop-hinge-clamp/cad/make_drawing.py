@@ -15,6 +15,7 @@ import re
 import cadquery as cq
 import model as M
 import params as P
+from build import as_compound
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -51,10 +52,10 @@ def scaled_group(inner_svg, src_w, src_h, x, y, box_w, box_h, label):
 def main():
     os.makedirs(DRAWINGS, exist_ok=True)
     parts = M.build_side(mirror=False)
-    closed = parts["base_clamp"].union(parts["bridge"]).union(parts["screen_clamp"])
+    closed = as_compound([parts["base_clamp"], parts["bridge"], parts["screen_clamp"]])
 
     open_screen = M.rotate_screen_clamp(parts["screen_clamp"], 90.0)
-    opened = parts["base_clamp"].union(parts["bridge"]).union(open_screen)
+    opened = as_compound([parts["base_clamp"], parts["bridge"], open_screen])
 
     tmp = "/tmp/_drawing_views"
     os.makedirs(tmp, exist_ok=True)
