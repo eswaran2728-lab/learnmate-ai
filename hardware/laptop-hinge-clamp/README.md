@@ -1,5 +1,11 @@
 # Parametric Laptop Hinge Repair Clamp
 
+**Laptop: ASUS X541N-AGO280T** (VivoBook Max X541N, mfg. 2017-08), shares
+its chassis/hinge design with the X541/R541/X540/A540/K541 family. Damage:
+the screen-side hinge mounting boss (plastic around the metal hinge
+bracket, rear-cover corner) is cracked, exposing the bracket, its two
+screws, and nearby antenna wiring.
+
 A structural (not cosmetic) repair for a broken laptop hinge boss. Two
 external clamps -- one on the bottom shell, one on the LCD rear cover --
 are bridged by a rigid printed link that carries hinge loads straight into
@@ -96,21 +102,30 @@ meshes -- safe to slice as-is.
 
 ## Parameters you should measure and tune (cad/params.py)
 
-These four are flagged in the file because they cannot be known without
-your actual laptop in hand:
+`SCREEN_MEASURED_THICKNESS` (7.3mm) was resolved from the ASUS X541 series'
+published closed-lid spec (~28mm) minus the caliper-measured base (20.7mm)
+-- a real, model-specific number, not a guess, but still an inference
+worth confirming with calipers on the rear cover directly if you get the
+chance. `MEASURED_THICKNESS` (20.7mm, base) is directly caliper-measured
+and confirmed.
+
+These four are still flagged because they genuinely cannot be known
+without your actual laptop's hinge area exposed -- no published spec goes
+this deep:
 
 | Parameter | Default | What it is |
 |---|---|---|
-| `PIVOT_OFFSET_X` | 15.0 mm | Distance from the clamp's installed face back to the true hinge axis. The single most important number for smooth rotation -- keep it as small as your wall thickness allows. |
-| `STACK_GAP` | 6.0 mm | Vertical gap between the Base Clamp stack and Screen Clamp stack in the closed pose -- where the real hinge barrel/bracket and the Bridge's clevis material live. |
-| `HINGE_BARREL_RADIUS` / `CABLE_CLEARANCE` | 4.0 mm / 4.0 mm | Sizes the open span between the two Bridge legs; widen if your hinge hardware or cable bundle is bigger than assumed. |
-| `MOUNT_SPACING_Y` | 60.0 mm | Spacing between the two Bridge legs (and their fasteners) -- must stay wide enough to keep the open centre span clear of your actual hinge/cable. |
+| `PIVOT_OFFSET_X` | 15.0 mm | Distance from the clamp's installed face back to the true hinge axis (the metal bracket visible in the crack). The single most important number for smooth rotation -- keep it as small as your wall thickness allows. |
+| `STACK_GAP` | 6.0 mm | Vertical gap between the Base Clamp stack and Screen Clamp stack in the closed pose -- where the real hinge bracket and the Bridge's clevis material live. |
+| `HINGE_BARREL_RADIUS` / `CABLE_CLEARANCE` | 4.0 mm / 4.0 mm | Sizes the open span between the two Bridge legs; widen if the metal bracket or the antenna wiring visible in the crack is bigger than assumed. |
+| `MOUNT_SPACING_Y` | 60.0 mm | Spacing between the two Bridge legs (and their fasteners) -- must stay wide enough to keep the open centre span clear of that bracket and wiring. |
 
 Everything else the brief specifically called out as adjustable is also a
-named parameter: `CLAMP_OPENING` (measured thickness + tolerance),
-`WALL_THK`, `CLAMP_WIDTH`, `CORNER_R`, `BRIDGE_THK`, screw/insert sizing,
-and `JAW_DEPTH` / `SCREEN_LIP_DEPTH` (how far each clamp reaches over the
-shell).
+named parameter: `CLAMP_OPENING` / `SCREEN_CLAMP_OPENING` (measured
+thickness + tolerance, now independent per clamp), `WALL_THK`,
+`CLAMP_WIDTH`, `CORNER_R`, `BRIDGE_THK`, screw/insert sizing, and
+`JAW_DEPTH` / `SCREEN_LIP_DEPTH` (how far each clamp reaches over the
+shell -- keep both past the extent of the crack).
 
 ## Regenerating everything after a tuning pass
 

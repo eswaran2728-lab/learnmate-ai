@@ -8,6 +8,13 @@ assemblies.
 
 Units: millimetres, degrees.
 
+LAPTOP: ASUS X541N-AGO280T (VivoBook Max X541N, mfg. 2017-08). This model
+shares its chassis/hinge design with the X541/R541/X540/A540/K541 family
+(confirmed via generic replacement hinge sets sold for that whole group),
+and its official closed-lid dimensions are ~27.6-28mm thick x 382mm wide x
+251mm deep. That, combined with the user's own caliper measurement of the
+base at 20.7mm, is where SCREEN_MEASURED_THICKNESS below comes from.
+
 HOW TO TUNE AFTER A TEST FIT
 ----------------------------
 The geometry that is genuinely uncertain from a spec sheet alone -- because
@@ -23,9 +30,19 @@ post-print.
 # ---------------------------------------------------------------------------
 # LAPTOP / CLAMP FIT (from the supplied measurements)
 # ---------------------------------------------------------------------------
-MEASURED_THICKNESS = 20.7      # measured laptop thickness at the clamp zone
+MEASURED_THICKNESS = 20.7      # measured (caliper) laptop BASE thickness at the clamp zone
 FIT_TOLERANCE = 0.3            # running clearance added to the measurement
-CLAMP_OPENING = MEASURED_THICKNESS + FIT_TOLERANCE   # = 21.0 mm internal gap
+CLAMP_OPENING = MEASURED_THICKNESS + FIT_TOLERANCE   # = 21.0 mm internal gap, Base Clamp only
+
+# Screen lid thickness -- NOT measured directly yet, inferred as
+# (official closed-laptop thickness) - (measured base thickness)
+# = 28.0 - 20.7 = 7.3mm. This is a real, model-specific estimate (not a
+# generic guess), but it's still an inference, not a caliper reading --
+# confirm with calipers on the actual rear cover if you get the chance,
+# then update SCREEN_MEASURED_THICKNESS directly.
+CLOSED_LAPTOP_THICKNESS_SPEC = 28.0    # official ASUS X541 series spec, closed
+SCREEN_MEASURED_THICKNESS = CLOSED_LAPTOP_THICKNESS_SPEC - MEASURED_THICKNESS  # = 7.3
+SCREEN_CLAMP_OPENING = SCREEN_MEASURED_THICKNESS + FIT_TOLERANCE   # = 7.6 mm internal gap, Screen Clamp only
 
 WALL_THK = 5.0                 # minimum wall thickness around the opening
 CLAMP_WIDTH = 97.0             # overall width along the hinge axis (Y)

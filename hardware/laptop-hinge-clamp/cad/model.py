@@ -26,8 +26,8 @@ import params as P
 # ---------------------------------------------------------------------------
 # Derived geometry
 # ---------------------------------------------------------------------------
-BASE_STACK_HEIGHT = P.CLAMP_OPENING + 2 * P.WALL_THK          # 31.0
-SCREEN_STACK_HEIGHT = BASE_STACK_HEIGHT                        # same opening assumption
+BASE_STACK_HEIGHT = P.CLAMP_OPENING + 2 * P.WALL_THK           # 31.0
+SCREEN_STACK_HEIGHT = P.SCREEN_CLAMP_OPENING + 2 * P.WALL_THK  # 17.6 -- screen lid is much thinner than the base
 SCREEN_Z0 = BASE_STACK_HEIGHT + P.STACK_GAP                    # 37.0
 PIVOT_X = -P.PIVOT_OFFSET_X
 PIVOT_Z = P.PIVOT_OFFSET_Z if P.PIVOT_OFFSET_Z is not None else (
@@ -187,7 +187,8 @@ def base_clamp():
 
 def screen_clamp():
     """Part 2: clips over the LCD rear-cover edge; pivots on the Bridge clevis."""
-    body = channel_block(jaw_depth=P.SCREEN_LIP_DEPTH, width=P.CLAMP_WIDTH, z0=SCREEN_Z0)
+    body = channel_block(jaw_depth=P.SCREEN_LIP_DEPTH, width=P.CLAMP_WIDTH, z0=SCREEN_Z0,
+                          opening=P.SCREEN_CLAMP_OPENING)
 
     arm_thk = 10.0
     for y in (-MOUNT_Y, MOUNT_Y):
