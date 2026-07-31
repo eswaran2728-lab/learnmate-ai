@@ -6,6 +6,20 @@ the screen-side hinge mounting boss (plastic around the metal hinge
 bracket, rear-cover corner) is cracked, exposing the bracket, its two
 screws, and nearby antenna wiring.
 
+> ### ⚠️ Start here: read [`docs/UNIVERSAL_SPLINT.md`](docs/UNIVERSAL_SPLINT.md)
+>
+> The user's hinge turned out to be **stiff/seized**, which changes the
+> correct repair. A bracket that pivots forms a second hinge in parallel
+> with the real one, and two parallel hinges must share an axis exactly or
+> they fight — with a stiff hinge, the steel wins and the printed part
+> breaks.
+>
+> The **Universal Lid Corner Splint** (`cad/splint_model.py`) is the
+> recommended design for this laptop: rigid, no pivot, no axis to align,
+> and **no measurements required**. The pivoting design documented below
+> remains valid only if the hinge mechanism itself is destroyed and needs
+> replacing — see "Which design do I want?" in that doc.
+
 A structural (not cosmetic) repair for a broken laptop hinge boss. Two
 external clamps -- one on the bottom shell, one on the LCD rear cover --
 are bridged by a rigid printed link that carries hinge loads straight into
