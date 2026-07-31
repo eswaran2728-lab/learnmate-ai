@@ -1,4 +1,34 @@
-# Universal Lid Corner Splint
+# Lid Corner Splint
+
+> ## v2 — v1 was printed and did not fit
+>
+> **What happened.** v1 wrapped two edges of the lid: the side edge *and*
+> the hinge edge. Wrapping the hinge edge means putting material into the
+> space between the bottom of the screen and the keyboard deck. That space
+> was then measured on the actual laptop: **4.1 mm**. v1's back wall alone
+> is 6 mm. It could never have fitted, in any orientation.
+>
+> On top of that, v1 used a 16 mm channel to span a generic 5–13 mm lid
+> range, which forced the part to 28 mm tall. Chasing universality made a
+> part that fitted nothing.
+>
+> **The fix.** v2 wraps the **side edge only**. There is open air beside
+> the lid, so nothing constrains the splint there, and it starts flush
+> with the lid's bottom edge so **0.0 mm** enters the 4.1 mm gap — now an
+> automated check in `check_splint.py`, not an assumption. The channel is
+> sized to the actual lid instead of a generic range.
+>
+> | | v1 | v2 |
+> |---|---|---|
+> | Size | 95 × 60 × 28 mm | **31 × 80 × 17.3 mm** |
+> | Wraps | side + hinge edge | side edge only |
+> | Into the 4.1 mm gap | 6.0 mm (fatal) | **0.0 mm** |
+> | Channel | 16 mm (generic) | 9.8 mm (this lid) |
+>
+> Grip strength was traded from "two short edges" to "one long edge" —
+> the side leg now runs 80 mm up the lid, so leverage against the corner
+> peeling open comes from grip length instead of wrapping a second edge.
+
 
 One design, no measurements required. This is the **recommended** repair
 for the ASUS X541N-AGO280T described in this repo, and it supersedes the
@@ -75,28 +105,26 @@ corner and cut only below the rear jaw so the part stays one solid piece.
 
 ## Fitting it
 
-```
-gap = 16.0 - (your lid thickness)
-```
+The 9.8mm channel takes lids from **6.0 to 8.3mm** and the set screws
+absorb the difference, so no shim is needed in the normal case. Shims
+(1 / 1.5 / 2mm) are there only if your lid turns out at the thin end.
 
-Pick the pressure bar that leaves roughly **0.5–2mm** for the screws to
-take up. For the ASUS X541 (lid ~7.3mm) that is `gap = 8.7` → the **8mm
-bar**, leaving 0.7mm of screw travel.
-
-1. Free or replace the hinge first (see above).
-2. Stick 1mm TPU or adhesive foam into the pad recesses — the shell's rear
-   jaw and the bar's underside both have them. This protects the finish and
-   adds grip.
-3. Slide the shell over the lid corner so it spans the crack, with the
-   short lip catching the outer bezel frame.
-4. Drop the pressure bar into the channel on top of the lid.
-5. Route any wiring through the pass-through holes — never pinched.
-6. Install the heat-set inserts, then tighten the M3 set screws evenly,
-   a little at a time, working across the part. Snug, not gorilla-tight —
-   you are clamping plastic.
-7. Close the lid and check the front lip does not press the keyboard. If it
-   does, set `FRONT_LIP = 0.0` in `splint_params.py` and reprint; the rear
-   jaw and set screws carry the load regardless.
+1. **Free or replace the hinge first** (see above). This matters more than
+   the printed part.
+2. Stick 1mm TPU or adhesive foam into the pad recess on the rear jaw.
+   This protects the finish and adds grip.
+3. Install the 4 heat-set inserts into the rear jaw.
+4. Slide the shell onto the lid's **side edge**, pushed down until it sits
+   flush with the lid's bottom edge so it spans the crack. The short lip
+   catches the outer bezel frame; it must not reach the LCD panel.
+5. Route any wiring through the pass-through hole — never pinched.
+6. Tighten the M3 set screws evenly, a little at a time, working along the
+   part. Snug, not gorilla-tight — you are clamping plastic.
+7. **Close the lid and check two things**: the front lip does not hold the
+   lid open against the keyboard, and nothing binds at the hinge. If the
+   lip fouls, set `FRONT_LIP_THK = 1.0` or `FRONT_LIP = 0.0` in
+   `splint_params.py` and reprint.
+8. Open and close slowly a few times before trusting it.
 
 ## What was verified
 

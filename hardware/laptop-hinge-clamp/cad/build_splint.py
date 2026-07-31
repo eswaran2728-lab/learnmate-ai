@@ -33,6 +33,18 @@ def export(shape, path_no_ext, step=True):
 def main():
     os.makedirs(OUT, exist_ok=True)
 
+    # Clear stale exports first. Without this, files from a previous
+    # parameter set survive alongside the new ones -- e.g. the large v1
+    # pressure bars linger after v2 shrinks the set, and there is nothing
+    # in the filename to tell you which generation you are about to print.
+    removed = 0
+    for f in os.listdir(OUT):
+        if f.endswith((".stl", ".step", ".3mf")):
+            os.remove(os.path.join(OUT, f))
+            removed += 1
+    if removed:
+        print(f"cleared {removed} stale export(s)")
+
     for hand, mirrored in (("left", False), ("right", True)):
         print(f"\n=== {hand.upper()} corner splint ===")
         shell = S.splint(mirror=mirrored)
@@ -46,7 +58,9 @@ def main():
             bar = S.pressure_bar(t)
             if mirrored:
                 bar = S.mirror_other_hand(bar)
-            name = f"{hand}_pressure_bar_{int(t)}mm"
+            # :g not int() -- int(1.5) and int(1.0) both render "1mm", so
+            # the 1.5mm shim silently overwrote the 1mm one.
+            name = f"{hand}_shim_{t:g}mm"
             # STL only for the bars -- they are simple plates and this keeps
             # the export set manageable; the shell STEP carries the CAD.
             export(bar, os.path.join(OUT, name), step=False)

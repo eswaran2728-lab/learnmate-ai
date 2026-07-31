@@ -77,7 +77,15 @@ def _leg(along, length):
             front = _box(x0, x1, -P.WALL, P.FRONT_LIP, Z_FRONT_0, 0.0)
             leg = leg.union(front)
     else:
-        y0, y1 = -P.WALL, length
+        # Where the side leg STARTS matters more than anything else in this
+        # design. Y=0 is the lid's bottom (hinge) edge, and below it lies
+        # the measured 4.1mm gap to the keyboard deck. Wrapping around that
+        # bottom edge -- which is what v1 did -- puts a full WALL thickness
+        # into a space that cannot take it. So when the hinge edge is not
+        # being wrapped, the leg starts flush at Y=0: it still spans the
+        # crack at the corner, but nothing protrudes into the gap.
+        y0 = -P.WALL if P.WRAP_HINGE_EDGE else 0.0
+        y1 = length
         back = _box(-P.WALL, 0.0, y0, y1, Z_BOT, Z_TOP)
         rear_jaw = _box(-P.WALL, P.REAR_GRIP, y0, y1, Z_REAR_JAW_0, Z_REAR_JAW_1)
         leg = back.union(rear_jaw)
@@ -90,16 +98,18 @@ def _leg(along, length):
 def _screw_positions():
     """(x, y) of each clamping set screw, on the rear jaw."""
     pts = []
-    # Along the hinge-edge leg: spread from the corner outward.
-    span = P.LEG_HINGE_LEN - P.SCREW_INSET
-    for i in range(P.N_SCREWS_HINGE_LEG):
-        frac = (i + 1) / (P.N_SCREWS_HINGE_LEG + 1)
-        pts.append((P.SCREW_INSET + frac * span, P.SCREW_INSET))
-    # Along the side-edge leg.
-    span_s = P.LEG_SIDE_LEN - P.SCREW_INSET
+    if P.WRAP_HINGE_EDGE:
+        span = P.LEG_HINGE_LEN - P.SCREW_INSET
+        for i in range(P.N_SCREWS_HINGE_LEG):
+            frac = (i + 1) / (P.N_SCREWS_HINGE_LEG + 1)
+            pts.append((P.SCREW_INSET + frac * span, P.SCREW_INSET))
+    # Side-edge leg: screws run the length of the grip. The first one sits
+    # close to the bottom corner, right over the crack, where clamping
+    # pressure matters most.
+    span_s = P.LEG_SIDE_LEN - 8.0
     for i in range(P.N_SCREWS_SIDE_LEG):
-        frac = (i + 1) / (P.N_SCREWS_SIDE_LEG + 1)
-        pts.append((P.SCREW_INSET, P.SCREW_INSET + frac * span_s))
+        frac = i / max(P.N_SCREWS_SIDE_LEG - 1, 1)
+        pts.append((P.SCREW_INSET, 8.0 + frac * (span_s - 8.0)))
     return pts
 
 
@@ -109,7 +119,9 @@ def splint(mirror=False):
     mirror=True produces the opposite-hand part by a true CAD mirror of
     the solid about the X=Y diagonal plane... see mirror_other_hand().
     """
-    body = _leg("X", P.LEG_HINGE_LEN).union(_leg("Y", P.LEG_SIDE_LEN))
+    body = _leg("Y", P.LEG_SIDE_LEN)
+    if P.WRAP_HINGE_EDGE:
+        body = body.union(_leg("X", P.LEG_HINGE_LEN))
 
     # --- fillets, applied EARLY on clean geometry ------------------------
     # Deliberately before the pockets and holes below. Filleting last would
@@ -119,18 +131,25 @@ def splint(mirror=False):
     body = _fillet_safe(body, ">Z", P.FILLET * 0.4)
 
     # --- clamping set screws: insert boss + insert bore ------------------
+    if P.INSERT_DEPTH > P.WALL + P.INSERT_BOSS_H:
+        raise ValueError(
+            f"insert ({P.INSERT_DEPTH}mm) is deeper than the jaw it sits in "
+            f"({P.WALL + P.INSERT_BOSS_H}mm) -- it would break through."
+        )
     for (sx, sy) in _screw_positions():
-        boss = _cyl(P.INSERT_BOSS_OD / 2.0, P.INSERT_BOSS_H,
-                    (sx, sy, Z_REAR_JAW_1))
-        body = body.union(boss)
-        bore = _cyl(P.INSERT_DIA / 2.0, P.INSERT_DEPTH + P.INSERT_BOSS_H + 0.5,
-                    (sx, sy, Z_REAR_JAW_1 + P.INSERT_BOSS_H + 0.5),
-                    axis=(0, 0, -1))
+        # Boss is optional: with a jaw thick enough to swallow the insert
+        # outright, INSERT_BOSS_H is 0 and no boss is added at all (a
+        # zero-height cylinder is invalid geometry, not just useless).
+        if P.INSERT_BOSS_H > 0:
+            body = body.union(_cyl(P.INSERT_BOSS_OD / 2.0, P.INSERT_BOSS_H,
+                                   (sx, sy, Z_REAR_JAW_1)))
+        top = Z_REAR_JAW_1 + P.INSERT_BOSS_H
+        bore = _cyl(P.INSERT_DIA / 2.0, P.INSERT_DEPTH,
+                    (sx, sy, top), axis=(0, 0, -1))
         body = body.cut(bore)
         # through-hole so the screw tip can reach the lid surface
         thru = _cyl(P.SCREW_CLEARANCE_DIA / 2.0, P.WALL + P.INSERT_BOSS_H + 1.0,
-                    (sx, sy, Z_REAR_JAW_1 + P.INSERT_BOSS_H + 0.5),
-                    axis=(0, 0, -1))
+                    (sx, sy, top + 0.5), axis=(0, 0, -1))
         body = body.cut(thru)
 
     # --- cable / wiring pass-through ------------------------------------
@@ -144,22 +163,28 @@ def splint(mirror=False):
     # bridges continuously over it and the part stays one solid.
     hole_z = OPEN / 2.0
     assert hole_z + P.CABLE_RELIEF_R < OPEN, "cable hole would breach the rear jaw"
-    for slot_x in P.CABLE_SLOT_X:
+    for slot_y in P.CABLE_SLOT_Y:
         wire = _cyl(P.CABLE_RELIEF_R, P.WALL + 2.0,
-                    (slot_x, -P.WALL - 1.0, hole_z), axis=(0, 1, 0))
+                    (-P.WALL - 1.0, slot_y, hole_z), axis=(1, 0, 0))
         body = body.cut(wire)
+    if P.WRAP_HINGE_EDGE:
+        for slot_x in P.CABLE_SLOT_X:
+            wire = _cyl(P.CABLE_RELIEF_R, P.WALL + 2.0,
+                        (slot_x, -P.WALL - 1.0, hole_z), axis=(0, 1, 0))
+            body = body.cut(wire)
 
     # --- soft-pad recesses on the gripping faces -------------------------
     # Rear jaw underside: the main load-bearing contact patch.
     pad_inset = 3.0
-    pad_rear_hinge = _box(pad_inset, P.LEG_HINGE_LEN - pad_inset,
-                          pad_inset, P.REAR_GRIP - pad_inset,
-                          Z_REAR_JAW_0, Z_REAR_JAW_0 + P.PAD_RECESS_DEPTH)
-    body = body.cut(pad_rear_hinge)
     pad_rear_side = _box(pad_inset, P.REAR_GRIP - pad_inset,
                          pad_inset, P.LEG_SIDE_LEN - pad_inset,
                          Z_REAR_JAW_0, Z_REAR_JAW_0 + P.PAD_RECESS_DEPTH)
     body = body.cut(pad_rear_side)
+    if P.WRAP_HINGE_EDGE:
+        pad_rear_hinge = _box(pad_inset, P.LEG_HINGE_LEN - pad_inset,
+                              pad_inset, P.REAR_GRIP - pad_inset,
+                              Z_REAR_JAW_0, Z_REAR_JAW_0 + P.PAD_RECESS_DEPTH)
+        body = body.cut(pad_rear_hinge)
 
     # Guard: an invalid solid tessellates into a non-watertight STL that
     # slicers will either reject or silently mis-slice. Fail loudly here
@@ -194,21 +219,25 @@ def pressure_bar(thickness=None):
     t = P.BAR_THK_DEFAULT if thickness is None else thickness
     c = P.BAR_CLEARANCE
 
-    arm_hinge = _box(c, P.LEG_HINGE_LEN - c, c, P.REAR_GRIP - c, 0.0, t)
-    arm_side = _box(c, P.REAR_GRIP - c, c, P.LEG_SIDE_LEN - c, 0.0, t)
-    bar = arm_hinge.union(arm_side)
+    # Footprint must follow whichever legs the shell actually has -- an
+    # L-shaped shim will not drop into a single-leg channel.
+    y_start = 0.0 if not P.WRAP_HINGE_EDGE else c
+    bar = _box(c, P.REAR_GRIP - c, y_start + c, P.LEG_SIDE_LEN - c, 0.0, t)
+    if P.WRAP_HINGE_EDGE:
+        bar = bar.union(_box(c, P.LEG_HINGE_LEN - c, c, P.REAR_GRIP - c, 0.0, t))
 
     # Soft-pad recess on the face that touches the lid.
     pad_in = 3.0
     if t > P.PAD_RECESS_DEPTH + 1.0:
-        pad_h = _box(c + pad_in, P.LEG_HINGE_LEN - c - pad_in,
-                     c + pad_in, P.REAR_GRIP - c - pad_in,
-                     0.0, P.PAD_RECESS_DEPTH)
-        bar = bar.cut(pad_h)
         pad_s = _box(c + pad_in, P.REAR_GRIP - c - pad_in,
-                     c + pad_in, P.LEG_SIDE_LEN - c - pad_in,
+                     y_start + c + pad_in, P.LEG_SIDE_LEN - c - pad_in,
                      0.0, P.PAD_RECESS_DEPTH)
         bar = bar.cut(pad_s)
+        if P.WRAP_HINGE_EDGE:
+            pad_h = _box(c + pad_in, P.LEG_HINGE_LEN - c - pad_in,
+                         c + pad_in, P.REAR_GRIP - c - pad_in,
+                         0.0, P.PAD_RECESS_DEPTH)
+            bar = bar.cut(pad_h)
 
     # Shallow dimples on the top face so the screw tips stay located
     # instead of skating across the bar as they are tightened.

@@ -47,7 +47,7 @@ def main():
     # --- 1. interference against a real lid ------------------------------
     print("\nlid interference (shell must not clash with the lid it slips over):")
     worst = 0.0
-    for thk in (P.LID_THK_MIN, 7.3, 10.0, P.LID_THK_MAX):
+    for thk in (P.LID_THK_MIN, P.LID_THK, P.LID_THK_MAX):
         lid = sim_lid(thk)
         overlap = vol(shell.intersect(lid))
         worst = max(worst, overlap)
@@ -55,16 +55,33 @@ def main():
         note = "  <- ASUS X541" if abs(thk - 7.3) < 0.01 else ""
         print(f"  lid {thk:5.1f} mm  overlap = {overlap:9.3f} mm^3   {tag}{note}")
 
-    # --- 2. stack-up ------------------------------------------------------
-    print("\nstack-up (lid + bar must fit the channel, leaving screw travel):")
-    for thk in (5.0, 7.3, 10.0, 13.0):
+    # --- 1b. the constraint that killed v1 --------------------------------
+    # Y=0 is the lid's bottom (hinge) edge; below it is the measured 4.1mm
+    # gap to the keyboard deck. v1 wrapped that edge and put 6mm of wall
+    # into it, which is why the printed part did not fit. Nothing may
+    # protrude below Y=0 unless it clears the gap with margin.
+    bb = shell.val().BoundingBox()
+    protrusion = max(0.0, -bb.ymin)
+    budget = P.SCREEN_DECK_GAP - P.GAP_SAFETY
+    gap_ok = protrusion <= budget
+    print(f"\nscreen-to-deck gap ({P.SCREEN_DECK_GAP} mm measured):")
+    print(f"  protrusion below lid bottom edge = {protrusion:.2f} mm "
+          f"(budget {budget:.2f} mm)   {'OK' if gap_ok else 'WILL NOT FIT'}")
+
+    # --- 2. clamping travel ----------------------------------------------
+    # v2 sizes the channel to the lid, so the question is no longer "which
+    # gap-filling bar do I need" but "do the set screws have room to
+    # actually clamp". Budget: a 1mm TPU pad, then usable screw travel.
+    print("\nclamping travel (screws must have room to bite after the pad):")
+    stack_ok = True
+    for thk in (P.LID_THK_MIN, P.LID_THK, P.LID_THK_MAX):
         gap = P.CHANNEL_OPENING - thk
-        best = min(P.BAR_THICKNESSES, key=lambda b: abs((gap - b) - 0.7))
-        left = gap - best
-        ok = 0.0 <= left <= 2.5
-        note = "  <- ASUS X541" if abs(thk - 7.3) < 0.01 else ""
-        print(f"  lid {thk:5.1f} mm  gap {gap:4.1f}  bar {best:4.1f}  "
-              f"screw take-up {left:4.1f} mm  {'OK' if ok else 'CHECK'}{note}")
+        travel = gap - P.PAD_RECESS_DEPTH
+        ok = 0.4 <= travel <= 4.0
+        stack_ok = stack_ok and ok
+        note = "  <- ASUS X541 (inferred)" if abs(thk - P.LID_THK) < 0.01 else ""
+        print(f"  lid {thk:5.1f} mm  gap {gap:4.1f}  pad {P.PAD_RECESS_DEPTH:3.1f}  "
+              f"screw travel {travel:4.1f} mm  {'OK' if ok else 'CHECK'}{note}")
 
     # --- 3. handedness ----------------------------------------------------
     # Deliberately avoids a boolean cut between the two filleted solids --
@@ -83,7 +100,7 @@ def main():
     print(f"                                 so the mirror is not a no-op)")
     differs = reflected and handed
 
-    ok_all = n == 1 and worst < 1.0 and same_vol and differs
+    ok_all = n == 1 and worst < 1.0 and same_vol and differs and gap_ok and stack_ok
     print("\nRESULT:", "PASS" if ok_all else "FAIL")
     return ok_all
 
